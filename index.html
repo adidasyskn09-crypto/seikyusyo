@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>週次集計 | Clover</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f5f5f5;color:#1a1a1a;font-size:15px}
+.header{background:#fff;border-bottom:1px solid #e8e8e8;padding:14px 16px;display:flex;align-items:center;position:sticky;top:0;z-index:50}
+.header-icon{width:28px;height:28px;background:#e07030;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-right:8px;flex-shrink:0}
+.header-icon svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.header-title{font-size:16px;font-weight:600}
+
+/* メインタブ（カード/現金） */
+.main-tabs{display:flex;background:#fff;border-bottom:1px solid #e8e8e8;position:sticky;top:57px;z-index:49}
+.main-tab{flex:1;padding:13px 0;text-align:center;font-size:14px;font-weight:500;color:#aaa;cursor:pointer;border-bottom:3px solid transparent;transition:color 0.15s,border-color 0.15s}
+.main-tab.card.active{color:#4caf50;border-bottom-color:#4caf50}
+.main-tab.cash.active{color:#e57373;border-bottom-color:#e57373}
+
+.page{display:none}
+.page.active{display:block}
+.main{padding:14px 12px 60px}
+
+/* 入力カード */
+.card{background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.card-title{padding:11px 14px;background:#fafafa;border-bottom:1px solid #f0f0f0;font-size:12px;font-weight:600;color:#888;letter-spacing:0.04em}
+.paste-area{width:100%;min-height:90px;border:none;padding:12px 14px;font-size:12px;font-family:monospace;color:#555;background:#fff;resize:vertical;outline:none}
+.paste-area::placeholder{color:#ccc;font-family:-apple-system,sans-serif}
+.btn-row{padding:12px 14px;display:flex;gap:8px}
+.btn-primary{flex:1;padding:12px;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-primary.card{background:#4caf50}
+.btn-primary.cash{background:#e57373}
+.btn-secondary{padding:12px 16px;background:#fff;color:#888;border:1px solid #e0e0e0;border-radius:10px;font-size:14px;cursor:pointer}
+
+/* 週タブ */
+.week-tabs{display:flex;gap:8px;padding:12px 14px;overflow-x:auto;white-space:nowrap}
+.week-tab{padding:6px 14px;border-radius:20px;border:1px solid #e0e0e0;font-size:12px;color:#888;cursor:pointer;background:#fff;flex-shrink:0}
+.week-tab.active.card{background:#4caf50;color:#fff;border-color:#4caf50}
+.week-tab.active.cash{background:#e57373;color:#fff;border-color:#e57373}
+
+/* 結果 */
+.week-header{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f5f5f5}
+.week-header.card{background:#f1f8f1}
+.week-header.cash{background:#fdf2f2}
+.week-range{font-size:13px;font-weight:700}
+.week-count{font-size:11px;color:#aaa;margin-top:2px}
+.pdf-btn{font-size:12px;color:#555;background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:5px 10px;cursor:pointer}
+
+/* 担当者ブロック */
+.staff-block{border-bottom:1px solid #f5f5f5}
+.staff-block:last-child{border-bottom:none}
+.staff-header{padding:9px 14px;background:#fafafa;display:flex;justify-content:space-between;align-items:center}
+.staff-name{font-size:12px;font-weight:600;color:#e07030}
+.staff-sub{font-size:11px;color:#aaa}
+.data-table{width:100%;border-collapse:collapse}
+.data-table th{padding:7px 10px;font-size:11px;color:#aaa;font-weight:500;text-align:left;border-bottom:1px solid #f0f0f0;background:#fafafa}
+.data-table td{padding:9px 10px;font-size:12px;color:#555;border-bottom:1px solid #f8f8f8;vertical-align:top}
+.data-table tr:last-child td{border-bottom:none}
+.data-table td.right{text-align:right;font-weight:500;white-space:nowrap}
+.data-table td.right.card{color:#4caf50}
+.data-table td.right.cash{color:#e57373}
+
+/* 週合計2窓 */
+.week-total{display:flex;gap:8px;padding:12px 14px;background:#fafafa;border-top:1px solid #f0f0f0}
+.total-box{flex:1;border-radius:10px;padding:10px 12px}
+.total-box.receive{background:#f1f8f1;border:1px solid #c8e6c9}
+.total-box.pay{background:#fdf2f2;border:1px solid #f5c6c6}
+.total-box-label{font-size:11px;color:#888;margin-bottom:4px;line-height:1.4}
+.total-box-val{font-size:17px;font-weight:700}
+.total-box-val.receive{color:#4caf50}
+.total-box-val.pay{color:#e57373}
+
+.empty{text-align:center;padding:40px 20px;color:#bbb;font-size:14px}
+
+/* 印刷 */
+#print-area{display:none}
+@media print{
+  body>*{display:none !important}
+  #print-area{display:block !important;font-family:-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;color:#1a1a1a;padding:15mm 15mm}
+  .pr-bar{text-align:center;padding:3mm 0;font-size:15pt;font-weight:700;letter-spacing:0.2em;margin-bottom:5mm;color:#fff}
+  .pr-bar.card{background:#4caf50}
+  .pr-bar.cash{background:#e57373}
+  .pr-head{display:flex;justify-content:space-between;margin-bottom:4mm;border-bottom:2px solid #e07030;padding-bottom:3mm}
+  .pr-company{font-size:12pt;font-weight:700;color:#e07030}
+  .pr-range{font-size:11pt;font-weight:600;text-align:right}
+  .pr-staff-name{font-size:10pt;font-weight:700;color:#e07030;margin:3mm 0 1mm}
+  .pr-table{width:100%;border-collapse:collapse;margin-bottom:2mm}
+  .pr-table th{padding:1.5mm 3mm;font-size:8.5pt;text-align:left;font-weight:600;color:#fff}
+  .pr-table th.card{background:#4caf50}
+  .pr-table th.cash{background:#e57373}
+  .pr-table td{padding:2mm 3mm;font-size:8.5pt;border-bottom:0.5px solid #eee}
+  .pr-table td.right{text-align:right}
+  .pr-staff-sub{text-align:right;font-size:8.5pt;color:#888;margin-bottom:2mm}
+  .pr-total-wrap{display:flex;gap:4mm;margin-top:4mm;padding-top:3mm;border-top:1px solid #e0e0e0}
+  .pr-total-box{flex:1;border-radius:2mm;padding:3mm 4mm}
+  .pr-total-box.receive{background:#f1f8f1;border:0.5px solid #c8e6c9}
+  .pr-total-box.pay{background:#fdf2f2;border:0.5px solid #f5c6c6}
+  .pr-total-label{font-size:8.5pt;color:#888;margin-bottom:1mm}
+  .pr-total-val{font-size:13pt;font-weight:700}
+  .pr-total-val.receive{color:#4caf50}
+  .pr-total-val.pay{color:#e57373}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+  <div class="header-title">週次集計</div>
+</div>
+
+<div class="main-tabs">
+  <div class="main-tab card active" id="tab-card" onclick="switchTab('card')">カード・請求書</div>
+  <div class="main-tab cash" id="tab-cash" onclick="switchTab('cash')">現金</div>
+</div>
+
+<!-- カード・請求書ページ -->
+<div class="page active" id="page-card">
+  <div class="main">
+    <div class="card">
+      <div class="card-title">送り先</div>
+      <div style="display:flex;align-items:center;padding:10px 14px;gap:8px">
+        <input type="text" id="to-card" placeholder="株式会社〇〇" maxlength="40"
+          style="flex:1;height:36px;border:1px solid #e0e0e0;border-radius:8px;padding:0 10px;font-size:14px;color:#1a1a1a;background:#fff">
+        <span style="font-size:14px;color:#aaa;white-space:nowrap">御中</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">「カード・請求書」シートのデータを貼り付け</div>
+      <textarea class="paste-area" id="paste-card" placeholder="スプレッドシートの「カード・請求書」シートをコピーして貼り付けてください"></textarea>
+      <div class="btn-row">
+        <button class="btn-primary card" onclick="loadData('card')">集計する</button>
+        <button class="btn-secondary" onclick="clearData('card')">クリア</button>
+      </div>
+    </div>
+    <div id="week-tabs-card" style="display:none">
+      <div class="card">
+        <div class="card-title">週を選択</div>
+        <div class="week-tabs" id="tabs-card"></div>
+      </div>
+    </div>
+    <div id="result-card"></div>
+  </div>
+</div>
+
+<!-- 現金ページ -->
+<div class="page" id="page-cash">
+  <div class="main">
+    <div class="card">
+      <div class="card-title">送り先</div>
+      <div style="display:flex;align-items:center;padding:10px 14px;gap:8px">
+        <input type="text" id="to-cash" placeholder="株式会社〇〇" maxlength="40"
+          style="flex:1;height:36px;border:1px solid #e0e0e0;border-radius:8px;padding:0 10px;font-size:14px;color:#1a1a1a;background:#fff">
+        <span style="font-size:14px;color:#aaa;white-space:nowrap">御中</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">「現金」シートのデータを貼り付け</div>
+      <textarea class="paste-area" id="paste-cash" placeholder="スプレッドシートの「現金」シートをコピーして貼り付けてください"></textarea>
+      <div class="btn-row">
+        <button class="btn-primary cash" onclick="loadData('cash')">集計する</button>
+        <button class="btn-secondary" onclick="clearData('cash')">クリア</button>
+      </div>
+    </div>
+    <div id="week-tabs-cash" style="display:none">
+      <div class="card">
+        <div class="card-title">週を選択</div>
+        <div class="week-tabs" id="tabs-cash"></div>
+      </div>
+    </div>
+    <div id="result-cash"></div>
+  </div>
+</div>
+
+<div id="print-area"></div>
+
+<script>
+const state = {
+  card: { data: [], weeks: [], selected: null },
+  cash: { data: [], weeks: [], selected: null }
+};
+let currentType = 'card';
+
+function fmt(n){ return Number(n||0).toLocaleString('ja-JP'); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtDateOnly(s){
+  if(!s) return '';
+  const m = s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? m[1]+'/'+String(m[2]).padStart(2,'0')+'/'+String(m[3]).padStart(2,'0') : s;
+}
+
+function getWeekKey(dateStr){
+  const m = dateStr.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if(!m) return null;
+  const d = new Date(+m[1],+m[2]-1,+m[3]);
+  d.setHours(0,0,0,0);
+  const sun = new Date(d); sun.setDate(d.getDate()-d.getDay());
+  const sat = new Date(sun); sat.setDate(sun.getDate()+6);
+  return { key: sun.toISOString().slice(0,10), start: sun, end: sat };
+}
+
+function fmtMD(d){ return (d.getMonth()+1)+'/'+d.getDate(); }
+
+function switchTab(type){
+  currentType = type;
+  document.getElementById('page-card').classList.toggle('active', type==='card');
+  document.getElementById('page-cash').classList.toggle('active', type==='cash');
+  document.getElementById('tab-card').classList.toggle('active', type==='card');
+  document.getElementById('tab-cash').classList.toggle('active', type==='cash');
+}
+
+function loadData(type){
+  const raw = document.getElementById('paste-'+type).value.trim();
+  if(!raw){ alert('データを貼り付けてください'); return; }
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const s = state[type];
+  s.data = [];
+
+  lines.forEach(line => {
+    const c = line.split('\t');
+    if(c.length < 2) return;
+    if(c[0]==='日時'||c[0]==='発行日') return;
+    const row = {
+      date: c[0]||'',
+      memo: c[1]||'',
+      taxin: parseInt((c[4]||'').replace(/[^\d]/g,''))||0,
+      taxex: parseInt((c[5]||'').replace(/[^\d]/g,''))||0,
+      cost: parseInt((c[6]||'').replace(/[^\d]/g,''))||0,
+      detail: c[8]||'',
+      staff: (c[9]||'未設定').trim(),
+    };
+    // taxin・costから正しい計算式で再計算
+    const isC = type === 'cash';
+    row.splitAmount = isC
+      ? Math.round(row.taxin * 0.7) - row.cost
+      : Math.round(row.taxin * 0.3) + row.cost;
+    const w = getWeekKey(row.date);
+    if(!w) return;
+    row.weekKey = w.key; row.weekStart = w.start; row.weekEnd = w.end;
+    if(row.taxin>0||row.splitAmount>0) s.data.push(row);
+  });
+
+  if(!s.data.length){ alert('有効なデータが見つかりませんでした。'); return; }
+
+  const weekMap = {};
+  s.data.forEach(r=>{
+    if(!weekMap[r.weekKey]) weekMap[r.weekKey]={ key:r.weekKey, start:r.weekStart, end:r.weekEnd };
+  });
+  s.weeks = Object.values(weekMap).sort((a,b)=>b.key.localeCompare(a.key));
+  s.selected = s.weeks[0]?.key || null;
+  renderTabs(type);
+  renderResult(type);
+}
+
+function clearData(type){
+  document.getElementById('paste-'+type).value='';
+  state[type] = { data:[], weeks:[], selected:null };
+  document.getElementById('week-tabs-'+type).style.display='none';
+  document.getElementById('result-'+type).innerHTML='';
+}
+
+function renderTabs(type){
+  const s = state[type];
+  document.getElementById('week-tabs-'+type).style.display='block';
+  document.getElementById('tabs-'+type).innerHTML = s.weeks.map(w=>`
+    <button class="week-tab ${w.key===s.selected?'active '+type:''}" onclick="selectWeek('${type}','${w.key}')">
+      ${fmtMD(w.start)}〜${fmtMD(w.end)}
+    </button>`).join('');
+}
+
+function selectWeek(type, key){
+  state[type].selected = key;
+  renderTabs(type);
+  renderResult(type);
+}
+
+function renderResult(type){
+  const s = state[type];
+  const res = document.getElementById('result-'+type);
+  if(!s.selected){ res.innerHTML=''; return; }
+  const w = s.weeks.find(x=>x.key===s.selected);
+  const wd = s.data.filter(r=>r.weekKey===s.selected);
+  if(!wd.length){ res.innerHTML='<div class="empty">この週のデータがありません</div>'; return; }
+
+  let weekTotal=0, weekSplit=0, weekCost=0;
+  wd.forEach(r=>{ weekTotal+=r.taxin; weekSplit+=r.splitAmount; weekCost+=r.cost; });
+  const weekBase = weekTotal - weekCost;
+
+  const sm={};
+  wd.forEach(r=>{ const st=r.staff||'未設定'; if(!sm[st])sm[st]=[]; sm[st].push(r); });
+
+  const staffHtml = Object.entries(sm).map(([staff, rows])=>{
+    let sub=0, stTotal=0;
+    const trs = rows.map(r=>{
+      sub+=r.splitAmount; stTotal+=r.taxin;
+      return `<tr>
+        <td>${esc(fmtDateOnly(r.date))}</td>
+        <td>${esc(r.memo)}</td>
+        <td class="right">${fmt(r.taxin)}円</td>
+        <td class="right">${fmt(r.cost)}円</td>
+        <td class="right ${type}">${fmt(r.splitAmount)}円</td>
+      </tr>`;
+    }).join('');
+    return `
+    <div class="staff-block">
+      <div class="staff-header">
+        <span class="staff-name">担当：${esc(staff)}</span>
+        <span class="staff-sub">${rows.length}件　振込 ${fmt(sub)}円</span>
+      </div>
+      <table class="data-table">
+        <thead><tr>
+          <th style="width:22%">日付</th>
+          <th style="width:26%">メモ</th>
+          <th style="width:17%">税込</th>
+          <th style="width:17%">経費</th>
+          <th style="width:18%">振込額</th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  const isCard = type==='card';
+  const totalLabel = isCard ? 'お求め金額' : '振込金額';
+  const totalClass = isCard ? 'receive' : 'pay';
+
+  res.innerHTML = `
+    <div class="card">
+      <div class="week-header ${type}">
+        <div>
+          <div class="week-range">${fmtMD(w.start)}（日）〜 ${fmtMD(w.end)}（土）</div>
+          <div class="week-count">${wd.length}件</div>
+        </div>
+        <button class="pdf-btn" onclick="printPDF('${type}','${s.selected}')">PDF</button>
+      </div>
+      ${staffHtml}
+      <div style="padding:12px 14px;background:#fafafa;border-top:1px solid #f0f0f0">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:#888;border-bottom:1px solid #f0f0f0">
+          <span>税込合計</span><span style="font-weight:500;color:#555">${fmt(weekTotal)}円</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:#888;border-bottom:1px solid #f0f0f0">
+          <span>発注経費合計</span><span style="font-weight:500;color:#555">${fmt(weekCost)}円</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:11px;color:#aaa;border-bottom:1px solid #f0f0f0">
+          <span>${type==='card' ? '税込×30%＋経費' : '税込×70%−経費'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:15px;font-weight:700">
+          <span>${totalLabel}</span>
+          <span style="color:${isCard ? '#4caf50' : '#e57373'}">${fmt(weekSplit)}円</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function printPDF(type, weekKey){
+  const s = state[type];
+  const w = s.weeks.find(x=>x.key===weekKey);
+  const wd = s.data.filter(r=>r.weekKey===weekKey);
+  if(!w||!wd.length) return;
+
+  let weekTotal=0, weekSplit=0, weekCost=0;
+  wd.forEach(r=>{ weekTotal+=r.taxin; weekSplit+=r.splitAmount; weekCost+=r.cost; });
+  const weekBase = weekTotal - weekCost;
+
+  const sm={};
+  wd.forEach(r=>{ const st=r.staff||'未設定'; if(!sm[st])sm[st]=[]; sm[st].push(r); });
+
+  const staffBlocks = Object.entries(sm).map(([staff, rows])=>{
+    let sub=0;
+    const trs = rows.map(r=>{
+      sub+=r.splitAmount;
+      return `<tr>
+        <td>${esc(fmtDateOnly(r.date))}</td>
+        <td>${esc(r.memo)}</td>
+        <td class="right">${fmt(r.taxin)}円</td>
+        <td class="right">${fmt(r.cost)}円</td>
+        <td class="right">${fmt(r.splitAmount)}円</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="pr-staff-name">担当：${esc(staff)}（${rows.length}件　振込 ${fmt(sub)}円）</div>
+      <table class="pr-table">
+        <thead><tr>
+          <th class="${type}" style="width:20%">日付</th>
+          <th class="${type}" style="width:28%">メモ</th>
+          <th class="${type}" style="width:17%">税込合計</th>
+          <th class="${type}" style="width:17%">発注経費</th>
+          <th class="${type}" style="width:18%">振込額</th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>`;
+  }).join('');
+
+  const isCard = type==='card';
+  const typeLabel = isCard ? 'カード・請求書払い' : '現金払い';
+  const totalLabel = isCard ? 'お求め金額' : '振込金額';
+  const totalClass = isCard ? 'receive' : 'pay';
+  const toName = document.getElementById('to-'+type).value.trim();
+  const toHtml = toName ? `<div style="font-size:16pt;font-weight:700;margin-bottom:2mm">${esc(toName)}　御中</div>` : '';
+
+  document.getElementById('print-area').innerHTML = `
+    <div class="pr-bar ${type}">${typeLabel}　週次集計表</div>
+    <div class="pr-head">
+      <div>${toHtml}</div>
+      <div style="text-align:right">
+        <div class="pr-range">${fmtMD(w.start)}（日）〜 ${fmtMD(w.end)}（土）　${wd.length}件</div>
+        <div style="font-size:9pt;color:#e07030;font-weight:600;margin-top:2mm">株式会社Clover</div>
+      </div>
+    </div>
+    ${staffBlocks}
+    <div style="margin-top:4mm;padding-top:3mm;border-top:1px solid #e0e0e0">
+      <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#555;border-bottom:0.5px solid #f0f0f0">
+        <span>税込合計</span><span style="font-weight:600">${fmt(weekTotal)}円</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#555;border-bottom:0.5px solid #f0f0f0">
+        <span>発注経費合計</span><span style="font-weight:600">${fmt(weekCost)}円</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#aaa;border-bottom:0.5px solid #f0f0f0">
+        <span>${type==='card' ? '税込×30%＋経費' : '税込×70%−経費'}</span><span></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:12pt;font-weight:700">
+        <span>${totalLabel}</span>
+        <span style="color:${isCard ? '#4caf50' : '#e57373'}">${fmt(weekSplit)}円</span>
+      </div>
+    </div>`;
+
+  const orig = document.title;
+  document.title = typeLabel+'_週次集計_'+fmtMD(w.start).replace('/','')+'_'+fmtMD(w.end).replace('/','');
+  window.print();
+  setTimeout(()=>{ document.title=orig; }, 500);
+}
+</script>
+</body>
+</html>
