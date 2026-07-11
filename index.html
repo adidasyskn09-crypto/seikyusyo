@@ -234,15 +234,20 @@ function loadData(type){
       taxin: parseInt((c[4]||'').replace(/[^\d]/g,''))||0,
       taxex: parseInt((c[5]||'').replace(/[^\d]/g,''))||0,
       cost: parseInt((c[6]||'').replace(/[^\d]/g,''))||0,
-      detail: c[8]||'',
-      staff: (c[9]||'未設定').trim(),
+      inspection: parseInt((c[7]||'').replace(/[^\d]/g,''))||0,
+      adjustment: parseInt((c[8]||'').replace(/[^\d]/g,''))||0,
+      detail: c[10]||'',
+      staff: (c[11]||'未設定').trim(),
     };
-    // splitAmountは元の値を保存（週合計ベースで再計算するため）
-    row.splitAmount = parseInt((c[7]||'').replace(/[^\d]/g,''))||0;
+    // 週合計ベースで再計算するためsplitAmountは使わず列のみ保存
+    row.splitAmount = parseInt((c[9]||'').replace(/[^\d]/g,''))||0;
+    // 対象金額 = taxin - cost - adjustment（点検費は加算済みなので引かない）
+    // カード：対象金額 × 30% + cost + inspection
+    // 現金：対象金額 × 70%
     const w = getWeekKey(row.date);
     if(!w) return;
     row.weekKey = w.key; row.weekStart = w.start; row.weekEnd = w.end;
-    if(row.taxin>0||row.splitAmount>0) s.data.push(row);
+    s.data.push(row);
   });
 
   if(!s.data.length){ alert('有効なデータが見つかりませんでした。'); return; }
@@ -304,15 +309,16 @@ function renderResult(type){
   const wd = s.data.filter(r=>r.weekKey===s.selected);
   if(!wd.length){ res.innerHTML='<div class="empty">この週のデータがありません</div>'; return; }
 
-  let weekTotal=0, weekSplit=0, weekCost=0;
+  let weekTotal=0, weekSplit=0, weekCost=0, weekInspection=0, weekAdjustment=0;
   const isCard = type==='card';
-  wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; });
-  // 週合計ベースで振込額を計算
-  const weekAfterFee = isCard ? Math.round(weekTotal * 975 / 1000) : weekTotal;
+  wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; weekInspection+=(r.inspection||0); weekAdjustment+=(r.adjustment||0); });
+  // 対象金額 = 税込合計(点検費込み) - 発注経費 - 調整金
+  const weekBase = Math.max(0, weekTotal - weekCost - weekInspection - weekAdjustment);
+  const weekAfterFee = isCard ? Math.round(weekTotal * 975 / 1000) : weekBase;
+  const weekCardBase = isCard ? Math.max(0, weekAfterFee - weekCost - weekInspection) : weekBase;
   weekSplit = isCard
-    ? Math.floor(weekAfterFee * 300 / 1000) + weekCost
-    : Math.floor(weekTotal * 700 / 1000) - weekCost;
-  const weekBase = weekTotal - weekCost;
+    ? Math.floor(weekCardBase * 300 / 1000) + weekCost + weekInspection
+    : Math.floor(Math.round(weekBase * 700) / 1000);
 
   const sm={};
   wd.forEach(r=>{ const st=r.staff||'未設定'; if(!sm[st])sm[st]=[]; sm[st].push(r); });
@@ -366,7 +372,7 @@ function renderResult(type){
           <span>税込合計</span><span style="font-weight:500;color:#555">${fmt(weekTotal)}円</span>
         </div>
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:#888;border-bottom:1px solid #f0f0f0">
-          <span>発注経費合計</span><span style="font-weight:500;color:#555">${fmt(weekCost)}円</span>
+          <span>発注経費合計（点検費含む）</span><span style="font-weight:500;color:#555">${fmt(weekCost + weekInspection)}円</span>
         </div>
         ${isCard ? `
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:#888;border-bottom:1px solid #f0f0f0">
@@ -374,7 +380,7 @@ function renderResult(type){
           <span style="font-weight:500;color:#555">${fmt(Math.round(weekTotal * 975 / 1000))}円</span>
         </div>` : ''}
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:11px;color:#aaa;border-bottom:1px solid #f0f0f0">
-          <span>${isCard ? '控除後×30%＋経費' : '税込×70%−経費'}</span>
+          <span>${isCard ? '控除後×30%＋経費' : '税込×70%−経費−点検費'}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:15px;font-weight:700">
           <span>${totalLabel}</span>
@@ -408,11 +414,14 @@ function printMultiPDF(type){
 
     let weekTotal=0, weekSplit=0, weekCost=0;
     const isMCard = type==='card';
-    wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; });
-    const mAfterFee = isMCard ? Math.round(weekTotal * 975 / 1000) : weekTotal;
+    let weekInspectionM=0, weekAdjustmentM=0;
+    wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; weekInspectionM+=(r.inspection||0); weekAdjustmentM+=(r.adjustment||0); });
+    const mBase = Math.max(0, weekTotal - weekCost - weekInspectionM - weekAdjustmentM);
+    const mAfterFee = isMCard ? Math.round(weekTotal * 975 / 1000) : mBase;
+    const mCardBase = isMCard ? Math.max(0, mAfterFee - weekCost - weekInspectionM) : mBase;
     weekSplit = isMCard
-      ? Math.floor(mAfterFee * 300 / 1000) + weekCost
-      : Math.floor(weekTotal * 700 / 1000) - weekCost;
+      ? Math.floor(mCardBase * 300 / 1000) + weekCost + weekInspectionM
+      : Math.floor(Math.round(mBase * 700) / 1000);
 
     const sm={};
     wd.forEach(r=>{ const st=r.staff||'未設定'; if(!sm[st])sm[st]=[]; sm[st].push(r); });
@@ -447,17 +456,21 @@ function printMultiPDF(type){
   }).join('');
 
   // 全週の合計を計算
-  let grandTotal=0, grandSplit=0, grandCost=0;
+  let grandTotal=0, grandSplit=0, grandCost=0, grandInspection=0;
   const isGCard = type==='card';
   keys.forEach(weekKey => {
     const wd = s.data.filter(r=>r.weekKey===weekKey);
     let wt=0, wc=0;
     wd.forEach(r=>{ wt+=r.taxin; wc+=r.cost; });
-    grandTotal+=wt; grandCost+=wc;
-    const gAfterFee = isGCard ? Math.round(wt * 975 / 1000) : wt;
+    grandTotal+=wt; grandCost+=wc; grandInspection+=gi;
+    const gi = s.data.filter(r=>r.weekKey===weekKey).reduce((a,r)=>(a+(r.inspection||0)),0);
+    const ga = s.data.filter(r=>r.weekKey===weekKey).reduce((a,r)=>(a+(r.adjustment||0)),0);
+    const gBase = Math.max(0, wt - wc - gi - ga);
+    const gAfterFee = isGCard ? Math.round(wt * 975 / 1000) : gBase;
+    const gCardBase = isGCard ? Math.max(0, gAfterFee - wc - gi) : gBase;
     grandSplit += isGCard
-      ? Math.floor(gAfterFee * 300 / 1000) + wc
-      : Math.floor(wt * 700 / 1000) - wc;
+      ? Math.floor(gCardBase * 300 / 1000) + wc + gi
+      : Math.floor(Math.round(gBase * 700) / 1000);
   });
 
   document.getElementById('print-area').innerHTML = `
@@ -472,7 +485,7 @@ function printMultiPDF(type){
     <div style="margin-top:5mm;padding:3mm 4mm;background:#fafafa;border:1px solid #e0e0e0;border-radius:2mm">
       <div style="font-size:9pt;font-weight:600;color:#888;margin-bottom:2mm">全期間合計</div>
       <div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;padding:1mm 0;border-bottom:0.5px solid #eee"><span>税込合計</span><span>${fmt(grandTotal)}円</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;padding:1mm 0;border-bottom:0.5px solid #eee"><span>発注経費合計</span><span>${fmt(grandCost)}円</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:9pt;color:#555;padding:1mm 0;border-bottom:0.5px solid #eee"><span>発注経費合計（点検費含む）</span><span>${fmt(grandCost + grandInspection)}円</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12pt;font-weight:700;padding:1mm 0;margin-top:1mm"><span>${totalLabel}</span><span style="color:${isCard?'#4caf50':'#e57373'}">${fmt(Math.floor(grandSplit))}円</span></div>
     </div>`;
   const orig = document.title;
@@ -487,14 +500,16 @@ function printPDF(type, weekKey){
   const wd = s.data.filter(r=>r.weekKey===weekKey);
   if(!w||!wd.length) return;
 
-  let weekTotal=0, weekSplit=0, weekCost=0;
+  let weekTotal=0, weekSplit=0, weekCost=0, weekInspection2=0, weekAdjustment2=0;
   const isPCard = type==='card';
-  wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; });
-  const wAfterFee = isPCard ? Math.round(weekTotal * 975 / 1000) : weekTotal;
+  wd.forEach(r=>{ weekTotal+=r.taxin; weekCost+=r.cost; weekInspection2+=(r.inspection||0); weekAdjustment2+=(r.adjustment||0); });
+  const wBase = Math.max(0, weekTotal - weekCost - weekInspection2 - weekAdjustment2);
+  const wAfterFee = isPCard ? Math.round(weekTotal * 975 / 1000) : wBase;
+  const wCardBase = isPCard ? Math.max(0, wAfterFee - weekCost - weekInspection2) : wBase;
   weekSplit = isPCard
-    ? Math.floor(wAfterFee * 300 / 1000) + weekCost
-    : Math.floor(weekTotal * 700 / 1000) - weekCost;
-  const weekBase = weekTotal - weekCost;
+    ? Math.floor(wCardBase * 300 / 1000) + weekCost + weekInspection2
+    : Math.floor(Math.round(wBase * 700) / 1000);
+  const weekBase = weekTotal - weekCost - weekAdjustment2;
 
   const sm={};
   wd.forEach(r=>{ const st=r.staff||'未設定'; if(!sm[st])sm[st]=[]; sm[st].push(r); });
@@ -551,14 +566,14 @@ function printPDF(type, weekKey){
         <span>税込合計</span><span style="font-weight:600">${fmt(weekTotal)}円</span>
       </div>
       <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#555;border-bottom:0.5px solid #f0f0f0">
-        <span>発注経費合計</span><span style="font-weight:600">${fmt(weekCost)}円</span>
+        <span>発注経費合計（点検費含む）</span><span style="font-weight:600">${fmt(weekCost + weekInspection2)}円</span>
       </div>
       ${type==='card' ? `
       <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#555;border-bottom:0.5px solid #f0f0f0">
         <span>カード手数料2.5%控除後</span><span style="font-weight:600">${fmt(Math.round(weekTotal * 975 / 1000))}円</span>
       </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:9pt;color:#aaa;border-bottom:0.5px solid #f0f0f0">
-        <span>${type==='card' ? '控除後×30%＋経費' : '税込×70%−経費'}</span><span></span>
+        <span>${type==='card' ? '控除後×30%＋経費' : '税込×70%−経費−点検費'}</span><span></span>
       </div>
       <div style="display:flex;justify-content:space-between;padding:2mm 0;font-size:12pt;font-weight:700">
         <span>${totalLabel}</span>
